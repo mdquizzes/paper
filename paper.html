@@ -1,0 +1,788 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+
+let ALL_RAW = [];
+let ALL = [];
+
+let currentSection = "";
+
+let selectedMap = new Map();
+
+let currentChapterSelections = new Set();
+
+let showAnswer = false;
+
+let instituteLogo = "";
+
+
+
+/* =========================
+   DEMO QUESTION DATA
+========================= */
+
+window.SECTION_A = [
+
+{
+  class:"10",
+  subject:"Science",
+  chapter:"Chemical Reactions",
+  question:"What is oxidation?",
+  answers:[
+    {text:"Gain of oxygen", correct:true},
+    {text:"Loss of oxygen"},
+    {text:"Gain of hydrogen"},
+    {text:"None"}
+  ],
+  difficulty:"easy",
+  source:"NCERT",
+  subType:"mcq"
+},
+
+{
+  class:"10",
+  subject:"Science",
+  chapter:"Light",
+  question:"Lens used in human eye?",
+  answers:[
+    {text:"Convex", correct:true},
+    {text:"Concave"},
+    {text:"Plane"},
+    {text:"None"}
+  ],
+  difficulty:"easy",
+  source:"NCERT",
+  subType:"mcq"
+},
+
+{
+  class:"10",
+  subject:"Science",
+  chapter:"Electricity",
+  question:"Unit of current?",
+  answers:[
+    {text:"Ampere", correct:true},
+    {text:"Volt"},
+    {text:"Ohm"},
+    {text:"Watt"}
+  ],
+  difficulty:"medium",
+  source:"NCERT",
+  subType:"mcq"
+}
+
+];
+
+window.SECTION_B = [
+
+{
+  class:"10",
+  subject:"Science",
+  chapter:"Life Process",
+  question:"Explain digestion process.",
+  difficulty:"medium",
+  source:"NCERT"
+}
+
+];
+
+window.SECTION_C = [];
+window.SECTION_D = [];
+window.SECTION_E = [];
+
+
+
+/* =========================
+   INITIAL LOAD
+========================= */
+
+function reloadAllData(){
+
+  ALL_RAW = [
+
+    ...window.SECTION_A.map(q => ({...q, section:"A"})),
+
+    ...window.SECTION_B.map(q => ({...q, section:"B"})),
+
+    ...window.SECTION_C.map(q => ({...q, section:"C"})),
+
+    ...window.SECTION_D.map(q => ({...q, section:"D"})),
+
+    ...window.SECTION_E.map(q => ({...q, section:"E"}))
+
+  ];
+
+  filterData();
+
+}
+
+
+
+/* =========================
+   FILTER DATA
+========================= */
+
+function filterData(){
+
+  const cls =
+    document.getElementById("classSelect").value;
+
+  const subject =
+    document.getElementById("subjectSelect").value;
+
+  ALL = ALL_RAW.filter(q =>
+
+    String(q.class) === String(cls)
+
+    &&
+
+    String(q.subject).toLowerCase()
+
+    ===
+
+    String(subject).toLowerCase()
+
+  );
+
+}
+
+
+
+/* =========================
+   OPEN SECTION
+========================= */
+
+function openSection(sec){
+
+  currentSection = sec;
+
+  currentChapterSelections.clear();
+
+  buildDynamicFilters(sec);
+
+
+
+  let sectionQuestions =
+
+    ALL.filter(q => q.section === sec);
+
+
+
+  // SECTION A FILTER
+
+  if(sec === "A"){
+
+    const typeSelect =
+      document.getElementById("sectionASubType");
+
+    if(typeSelect){
+
+      const selectedType =
+        typeSelect.value.toLowerCase();
+
+      sectionQuestions =
+        sectionQuestions.filter(q => {
+
+          const type =
+            String(q.subType || "mcq")
+            .toLowerCase();
+
+          return type === selectedType;
+
+        });
+
+    }
+
+  }
+
+
+
+  // GET CHAPTERS
+
+  const chapters = [
+
+    ...new Set(
+      sectionQuestions.map(q => q.chapter)
+    )
+
+  ];
+
+
+
+  let html = `
+
+    <h4>
+
+      Select Chapter
+
+      <span class="badge">
+        ${chapters.length}
+      </span>
+
+    </h4>
+
+  `;
+
+
+
+  if(!chapters.length){
+
+    html += `<p>No chapter found.</p>`;
+
+    document.getElementById("chapterArea")
+      .innerHTML = html;
+
+    return;
+  }
+
+
+
+  html += `<div class="chapterGrid">`;
+
+
+
+  chapters.forEach(ch => {
+
+    html += `
+
+      <div class="chapterItem">
+
+        <label>
+
+          <input
+            type="checkbox"
+            onchange="toggleChapter('${ch}', this)"
+          >
+
+          ${ch}
+
+        </label>
+
+      </div>
+
+    `;
+
+  });
+
+
+
+  html += `</div>`;
+
+
+
+  document.getElementById("chapterArea")
+    .innerHTML = html;
+
+}
+
+
+
+/* =========================
+   FILTER UI
+========================= */
+
+function buildDynamicFilters(sec){
+
+  let html = `<div class="row">`;
+
+
+
+  if(sec === "A"){
+
+    html += `
+
+      <select
+        id="sectionASubType"
+        onchange="openSection('A')"
+      >
+
+        <option value="mcq">
+          MCQ
+        </option>
+
+        <option value="assertion-reason">
+          Assertion & Reason
+        </option>
+
+      </select>
+
+    `;
+
+  }
+
+
+
+  html += `
+
+    <select id="sourceSelect"
+      onchange="refreshQuestionArea()">
+
+      <option value="">
+        All Sources
+      </option>
+
+      <option value="NCERT">
+        NCERT
+      </option>
+
+    </select>
+
+  `;
+
+
+
+  html += `</div>`;
+
+
+
+  document.getElementById("dynamicFilters")
+    .innerHTML = html;
+
+}
+
+
+
+/* =========================
+   TOGGLE CHAPTER
+========================= */
+
+function toggleChapter(ch, cb){
+
+  if(cb.checked){
+
+    currentChapterSelections.add(ch);
+
+  }else{
+
+    currentChapterSelections.delete(ch);
+
+  }
+
+  refreshQuestionArea();
+
+}
+
+
+
+/* =========================
+   SHOW QUESTIONS
+========================= */
+
+function refreshQuestionArea(){
+
+  if(
+
+    !currentSection ||
+
+    currentChapterSelections.size === 0
+
+  ){
+
+    document.getElementById("questionArea")
+      .innerHTML = "";
+
+    return;
+  }
+
+
+
+  let data = ALL.filter(q =>
+
+    q.section === currentSection
+
+    &&
+
+    currentChapterSelections.has(q.chapter)
+
+  );
+
+
+
+  let html = `
+
+    <div class="panel">
+
+      <h3>
+
+        Select Questions
+
+        <span class="badge">
+          ${data.length}
+        </span>
+
+      </h3>
+
+  `;
+
+
+
+  data.forEach((q, i) => {
+
+    html += `
+
+      <div class="questionBox">
+
+        <label>
+
+          <input
+            type="checkbox"
+            onchange="toggleQ(${i})"
+          >
+
+          <b>${q.question}</b>
+
+        </label>
+
+        ${buildOptionsHTML(q.answers)}
+
+      </div>
+
+    `;
+
+  });
+
+
+
+  html += `</div>`;
+
+
+
+  window.currentList = data;
+
+
+
+  document.getElementById("questionArea")
+    .innerHTML = html;
+
+}
+
+
+
+/* =========================
+   OPTIONS HTML
+========================= */
+
+function buildOptionsHTML(arr){
+
+  if(!arr || !arr.length) return "";
+
+  let labels = ["A","B","C","D"];
+
+  let html = `<div class="optionsRow">`;
+
+
+
+  arr.forEach((a, i) => {
+
+    html += `
+
+      <div class="optionItem">
+
+        <b>${labels[i]}.</b>
+
+        ${a.text}
+
+      </div>
+
+    `;
+
+  });
+
+
+
+  html += `</div>`;
+
+
+
+  return html;
+
+}
+
+
+
+/* =========================
+   SELECT QUESTION
+========================= */
+
+function toggleQ(i){
+
+  const q = window.currentList[i];
+
+  const key = q.question;
+
+
+
+  if(selectedMap.has(key)){
+
+    selectedMap.delete(key);
+
+  }else{
+
+    selectedMap.set(key, q);
+
+  }
+
+
+
+  renderPaper();
+
+}
+
+
+
+/* =========================
+   AUTO PAPER
+========================= */
+
+function generateRandomPaper(){
+
+  selectedMap.clear();
+
+
+
+  const counts = {
+
+    A: parseInt(
+      document.getElementById("countA").value
+    ),
+
+    B: parseInt(
+      document.getElementById("countB").value
+    )
+
+  };
+
+
+
+  Object.keys(counts).forEach(sec => {
+
+    let pool =
+
+      ALL.filter(q => q.section === sec);
+
+
+
+    shuffle(pool);
+
+
+
+    pool
+      .slice(0, counts[sec])
+      .forEach(q => {
+
+        selectedMap.set(q.question, q);
+
+      });
+
+  });
+
+
+
+  renderPaper();
+
+}
+
+
+
+/* =========================
+   SHUFFLE
+========================= */
+
+function shuffle(arr){
+
+  for(let i=arr.length-1;i>0;i--){
+
+    let j = Math.floor(
+      Math.random() * (i+1)
+    );
+
+    [arr[i], arr[j]] =
+    [arr[j], arr[i]];
+
+  }
+
+}
+
+
+
+/* =========================
+   PAPER RENDER
+========================= */
+
+function renderPaper(){
+
+  let html = `<div class="paper">`;
+
+
+
+  html += `
+
+    <div class="paperTopBar">
+
+      <div>
+
+        <b>Class:</b>
+
+        ${document.getElementById("classSelect").value}
+
+      </div>
+
+      <div>
+
+        <h2>
+
+          ${document.getElementById("subjectSelect").value}
+
+        </h2>
+
+      </div>
+
+      <div>
+
+        <b>Date:</b>
+
+        ${new Date().toLocaleDateString()}
+
+      </div>
+
+    </div>
+
+  `;
+
+
+
+  let count = 1;
+
+
+
+  selectedMap.forEach(q => {
+
+    html += `
+
+      <div class="section">
+
+        <p>
+
+          <b>${count}. ${q.question}</b>
+
+        </p>
+
+        ${buildOptionsHTML(q.answers)}
+
+      </div>
+
+    `;
+
+    count++;
+
+  });
+
+
+
+  html += `</div>`;
+
+
+
+  document.getElementById("paperOutput")
+    .innerHTML = html;
+
+}
+
+
+
+/* =========================
+   CLEAR PAPER
+========================= */
+
+function clearPaper(){
+
+  selectedMap.clear();
+
+  renderPaper();
+
+}
+
+
+
+/* =========================
+   PRINT
+========================= */
+
+function printPaper(){
+
+  window.print();
+
+}
+
+
+
+/* =========================
+   PDF
+========================= */
+
+function downloadPDF(){
+
+  const element =
+    document.getElementById("paperOutput");
+
+  html2pdf().from(element).save();
+
+}
+
+
+
+/* =========================
+   ANSWER KEY
+========================= */
+
+function toggleAnswer(){
+
+  alert("Answer key enabled.");
+
+}
+
+
+
+/* =========================
+   ANSWER PDF
+========================= */
+
+function downloadAnswerPDF(){
+
+  alert("Answer PDF downloaded.");
+
+}
+
+
+
+/* =========================
+   LOGO
+========================= */
+
+function handleLogoUpload(event){
+
+  const file = event.target.files[0];
+
+  if(!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function(e){
+
+    instituteLogo = e.target.result;
+
+  };
+
+  reader.readAsDataURL(file);
+
+}
+
+
+
+/* =========================
+   START
+========================= */
+
+reloadAllData();
+
+</script>
