@@ -11,12 +11,31 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/index.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <style>
+
+    /* ===============================
+       SECURITY / AUTH UI
+       =============================== */
+    .auth-overlay{
+      position:fixed; inset:0; z-index:99999;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(15,23,42,.96); padding:20px;
+    }
+    .auth-card{
+      width:min(460px,100%); background:#fff; border-radius:22px;
+      padding:28px; box-shadow:0 25px 70px rgba(0,0,0,.35); text-align:center;
+    }
+    .auth-card h2{margin:0 0 8px;color:#0f172a}
+    .auth-card p{color:#475569;line-height:1.5}
+    .auth-user{font-size:13px;color:#64748b;margin:12px 0}
+    .auth-error{display:none;margin-top:12px;padding:10px;border-radius:10px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+    .security-badge{display:inline-block;margin-top:10px;padding:6px 10px;border-radius:999px;background:#ecfdf5;color:#166534;font-size:12px}
+    body.auth-locked > .app{display:none}
     :root{
       --bg:#0f172a;
       --panel:#111827;
@@ -607,7 +626,20 @@
     }
   </style>
 </head>
-<body>
+<body class="auth-locked">
+
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <div style="font-size:42px;">🔐</div>
+      <h2>Creator PRO — Secure Sign In</h2>
+      <p>Google account se sign in karne ke baad hi question bank aur Firebase data access hoga.</p>
+      <button class="btn btn-primary" id="googleSignInBtn" style="width:100%;font-size:16px;">Continue with Google</button>
+      <button class="btn btn-light" id="googleSignOutBtn" style="width:100%;display:none;margin-top:8px;">Sign out</button>
+      <div class="auth-user" id="authUser"></div>
+      <div class="auth-error" id="authError"></div>
+      <div class="security-badge">Firebase Auth protected</div>
+    </div>
+  </div>
   <div class="app">
     <div class="topbar">
       <h1>📚 Creator PRO — Question Bank Builder</h1>
@@ -696,7 +728,7 @@
           <h3>🧰 Tools</h3>
           <button class="btn btn-teal" id="backupBtn">Backup JSON</button>
           <button class="btn btn-light" id="restoreBtn">Restore JSON</button>
-          <button class="btn btn-pink" id="rebuildMasterPdfBtn">Rebuild Master PDF</button>
+          <button class="btn btn-pink" id="rebuildMasterPdfBtn">Export Master PDF</button>
           <input type="file" id="restoreInput" accept=".json" style="display:none;">
         </div>
       </aside>
@@ -726,7 +758,7 @@
     </div>
   </div>
 
-  <!-- Firebase -->
+  <!-- Firebase + Google Authentication -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
     import {
@@ -744,8 +776,17 @@
       uploadBytes,
       getDownloadURL
     } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-storage.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
-    // 🔥 Your Firebase Config
+    // Firebase Web App Config — Creator project.
+    // Firebase Web API keys are public identifiers; real protection comes from
+    // Firebase Authentication + Firestore/Storage Security Rules + App Check.
     const firebaseConfig = {
       apiKey: "AIzaSyDX7zxnLENnCjnJKg_0tnHo7jGebOV2D2I",
       authDomain: "creator-3a22c.firebaseapp.com",
@@ -759,20 +800,23 @@
     const firebaseApp = initializeApp(firebaseConfig);
     const db = getFirestore(firebaseApp);
     const storage = getStorage(firebaseApp);
+    const auth = getAuth(firebaseApp);
+    const googleProvider = new GoogleAuthProvider();
 
     window.firebaseServices = {
-      db,
-      storage,
-      doc,
-      setDoc,
-      getDoc,
-      collection,
-      addDoc,
-      serverTimestamp,
-      ref,
-      uploadBytes,
-      getDownloadURL
+      db, storage, auth, googleProvider,
+      doc, setDoc, getDoc, collection, addDoc, serverTimestamp,
+      ref, uploadBytes, getDownloadURL,
+      signInWithPopup, signOut
     };
+
+    window.firebaseAuthReady = new Promise(resolve => {
+      onAuthStateChanged(auth, user => {
+        window.firebaseCurrentUser = user || null;
+        resolve(user || null);
+        window.dispatchEvent(new CustomEvent("firebase-auth-changed", { detail: user || null }));
+      });
+    });
   </script>
 
   <script>
@@ -786,7 +830,11 @@
       "Section 4"
     ];
 
+    let appInitialized = false;
+
     let appData = {
+      appVersion: "paper-creator-v2",
+      storageNamespace: "paperCreatorProQuestionBank",
       title: "",
       className: "",
       chapterName: "",
@@ -833,16 +881,76 @@
     // ===============================
     // INIT
     // ===============================
-    init();
+    document.body.classList.add("auth-locked");
 
-    function init() {
+    window.addEventListener("firebase-auth-changed", async (event) => {
+      const user = event.detail;
+      if (!user) {
+        document.body.classList.add("auth-locked");
+        updateAuthUI(null);
+        return;
+      }
+      document.body.classList.remove("auth-locked");
+      updateAuthUI(user);
+      init();
+    });
+
+    async function init() {
+      if (appInitialized) return;
+      appInitialized = true;
       loadFromLocalStorage();
       renderSections();
       updateDashboard();
       bindGlobalEvents();
       renderImportHistory();
-      updateFirebaseStatus("Firebase ready ✔️", true);
+      updateFirebaseStatus("Signed in • Firebase ready ✔️", true);
     }
+
+    function updateAuthUI(user) {
+      const overlay = document.getElementById("authOverlay");
+      const signInBtn = document.getElementById("googleSignInBtn");
+      const signOutBtn = document.getElementById("googleSignOutBtn");
+      const authUser = document.getElementById("authUser");
+      const authError = document.getElementById("authError");
+
+      if (authError) {
+        authError.style.display = "none";
+        authError.textContent = "";
+      }
+
+      if (user) {
+        overlay.style.display = "none";
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "block";
+        authUser.textContent = user.email ? `Signed in as ${user.email}` : "Signed in with Google";
+      } else {
+        overlay.style.display = "flex";
+        signInBtn.style.display = "block";
+        signOutBtn.style.display = "none";
+        authUser.textContent = "";
+      }
+    }
+
+    document.getElementById("googleSignInBtn").addEventListener("click", async () => {
+      const authError = document.getElementById("authError");
+      try {
+        const services = window.firebaseServices;
+        if (!services?.auth) throw new Error("Firebase Authentication is not initialized.");
+        await services.signInWithPopup(services.auth, services.googleProvider);
+      } catch (err) {
+        console.error(err);
+        authError.textContent = "Google sign-in failed. Firebase Authentication me Google provider aur Authorized Domains check karein.";
+        authError.style.display = "block";
+      }
+    });
+
+    document.getElementById("googleSignOutBtn").addEventListener("click", async () => {
+      try {
+        await window.firebaseServices.signOut(window.firebaseServices.auth);
+      } catch (err) {
+        console.error(err);
+      }
+    });
 
     // ===============================
     // UTILITIES
@@ -852,16 +960,46 @@
     }
 
     function saveToLocalStorage() {
-      localStorage.setItem("creatorProQuestionBank", JSON.stringify(appData));
+      localStorage.setItem("paperCreatorProQuestionBank", JSON.stringify(appData));
+    }
+
+    function normalizeAppData(data) {
+      if (!data || !Array.isArray(data.sections)) return null;
+      data.appVersion = data.appVersion || "paper-creator-v2";
+      data.storageNamespace = "paperCreatorProQuestionBank";
+      data.imports = Array.isArray(data.imports) ? data.imports : [];
+      data.settings = data.settings || { duplicateThreshold: 0.82, strictNearDuplicateBlock: false };
+      data.settings.duplicateThreshold = Number(data.settings.duplicateThreshold) || 0.82;
+      data.settings.strictNearDuplicateBlock = Boolean(data.settings.strictNearDuplicateBlock);
+      data.sections = data.sections.map((section, index) => ({
+        id: section.id || "section_" + (index + 1),
+        name: section.name || SECTION_NAMES[index] || "Section " + (index + 1),
+        icon: section.icon || ["①","②","③","④"][index] || "•",
+        questions: Array.isArray(section.questions) ? section.questions.map(q => ({
+          ...q,
+          id: q.id || uid(),
+          text: String(q.text || "").trim(),
+          answer: String(q.answer || ""),
+          fingerprint: q.fingerprint || createQuestionFingerprint(q.text || ""),
+          sourceFiles: Array.isArray(q.sourceFiles) ? q.sourceFiles : [q.sourceFileName || "manual"],
+          importHistory: Array.isArray(q.importHistory) ? q.importHistory : [],
+          seenCount: q.seenCount || 1,
+          blockedDuplicateCount: q.blockedDuplicateCount || 0,
+          imageUrl: q.imageUrl || "",
+          imageThumb: q.imageThumb || ""
+        })).filter(q => q.text) : []
+      }));
+      return data;
     }
 
     function loadFromLocalStorage() {
-      const saved = localStorage.getItem("creatorProQuestionBank");
+      const saved = localStorage.getItem("paperCreatorProQuestionBank");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed && parsed.sections) {
-            appData = parsed;
+          const normalized = normalizeAppData(parsed);
+          if (normalized) {
+            appData = normalized;
           }
         } catch (e) {
           console.error("Failed to parse saved data", e);
@@ -940,7 +1078,7 @@
         .trim();
 
       // More robust patterns
-      const numberedRegex = /(?:^|\n)(?:Q\.?\s*\d+|Question\s*\d+|\d+[.)]|[A-D][.)]|[ivxlcdm]+\.)\s+/gim;
+      const numberedRegex = /(?:^|\n)(?:Q\.?\s*\d+|Question\s*\d+|\d+[.)])\s+/gim;
       const matches = [...cleaned.matchAll(numberedRegex)];
 
       let parts = [];
@@ -1270,7 +1408,7 @@
           ${imgHtml}
 
           <div class="source-list">
-            <strong>Source Files:</strong> ${(q.sourceFiles || []).join(", ") || "manual"}<br>
+            <strong>Source Files:</strong> ${escapeHtml((q.sourceFiles || []).join(", ") || "manual")}<br>
             <strong>Last Seen:</strong> ${formatDate(q.lastSeenDate)}<br>
             ${q.nearDuplicateScore ? `<strong>Near Match Score:</strong> ${q.nearDuplicateScore.toFixed(2)}` : ""}
           </div>
@@ -1552,13 +1690,34 @@
     function editQuestionText(sectionId, qId, newText) {
       const q = getQuestionById(sectionId, qId);
       if (!q) return;
-      q.text = newText.trim();
-      q.fingerprint = createQuestionFingerprint(q.text);
+
+      const cleanedText = String(newText || "").trim();
+      if (!cleanedText) {
+        alert("Question text cannot be empty.");
+        renderSections(globalSearch.value);
+        return;
+      }
+
+      const newFingerprint = createQuestionFingerprint(cleanedText);
+      const oldText = q.text;
+
+      // Never allow editing a question into an existing exact duplicate.
+      const exactMatch = findExistingQuestionByFingerprint(newFingerprint);
+      if (exactMatch && exactMatch.question.id !== q.id) {
+        alert("Exact duplicate detected. This edit was not saved.");
+        renderSections(globalSearch.value);
+        return;
+      }
+
+      q.text = cleanedText;
+      q.fingerprint = newFingerprint;
       q.updatedAt = new Date().toISOString();
-      // Re-evaluate near warning
+
+      // Re-evaluate near warning while excluding the current question itself.
       const near = findNearDuplicateQuestion(q.text);
       q.duplicateType = near && near.question.id !== q.id ? "near_warning" : null;
       q.nearDuplicateScore = near && near.question.id !== q.id ? near.score : null;
+
       saveToLocalStorage();
       renderSections(globalSearch.value);
       updateDashboard();
@@ -1723,8 +1882,8 @@
     }
 
     async function extractTextFromImage(file) {
-      // OCR English + Hindi mixed support
-      const result = await Tesseract.recognize(file, "eng", {
+      // OCR English + Hindi mixed support (eng + hin)
+      const result = await Tesseract.recognize(file, "eng+hin", {
         logger: m => console.log(m)
       });
       return result.data.text || "";
@@ -1825,6 +1984,11 @@
     // ===============================
     async function saveToFirebase() {
       try {
+        const user = window.firebaseCurrentUser;
+        if (!user) {
+          alert("Please sign in with Google first.");
+          return;
+        }
         const { db, doc, setDoc, collection, addDoc, serverTimestamp } = window.firebaseServices || {};
         if (!db) {
           updateFirebaseStatus("Firebase config missing.", false);
@@ -1832,16 +1996,20 @@
           return;
         }
 
-        const bankId = sanitizeFileName(appData.title || "default_question_bank");
+        const bankId = "paper_" + sanitizeFileName(appData.title || "default_question_bank");
 
         await setDoc(doc(db, "questionBanks", bankId), {
           ...appData,
+          ownerUid: user.uid,
+          ownerEmail: user.email || "",
           updatedAt: new Date().toISOString(),
           savedAtServer: serverTimestamp()
         });
 
         await addDoc(collection(db, "questionBankLogs"), {
           bankId,
+          ownerUid: user.uid,
+          ownerEmail: user.email || "",
           action: "save",
           title: appData.title || "Untitled Bank",
           className: appData.className || "",
@@ -1861,6 +2029,11 @@
 
     async function loadFromFirebase() {
       try {
+        const user = window.firebaseCurrentUser;
+        if (!user) {
+          alert("Please sign in with Google first.");
+          return;
+        }
         const { db, doc, getDoc } = window.firebaseServices || {};
         if (!db) {
           updateFirebaseStatus("Firebase config missing.", false);
@@ -1868,7 +2041,7 @@
           return;
         }
 
-        const bankId = sanitizeFileName(appData.title || prompt("Enter bank title to load:", "default_question_bank"));
+        const bankId = "paper_" + sanitizeFileName(appData.title || prompt("Enter bank title to load:", "default_question_bank"));
         if (!bankId) return;
 
         const snap = await getDoc(doc(db, "questionBanks", bankId));
@@ -1879,7 +2052,11 @@
           return;
         }
 
-        appData = snap.data();
+        const loadedData = normalizeAppData(snap.data());
+        if (!loadedData) {
+          throw new Error("Invalid Firebase question bank data.");
+        }
+        appData = loadedData;
         bankTitleInput.value = appData.title || "";
         classNameInput.value = appData.className || "";
         chapterNameInput.value = appData.chapterName || "";
@@ -1900,10 +2077,12 @@
 
     async function uploadSourceFileToFirebase(file) {
       try {
+        const user = window.firebaseCurrentUser;
+        if (!user) return null;
         const { storage, ref, uploadBytes, getDownloadURL } = window.firebaseServices || {};
         if (!storage) return null;
 
-        const safeBank = sanitizeFileName(appData.title || "question_bank");
+        const safeBank = "paper_" + sanitizeFileName(appData.title || "question_bank");
         const filePath = `question-bank-uploads/${safeBank}/${Date.now()}_${file.name}`;
         const storageRef = ref(storage, filePath);
 
@@ -2299,8 +2478,9 @@
       reader.onload = function(e) {
         try {
           const parsed = JSON.parse(e.target.result);
-          if (!parsed.sections) throw new Error("Invalid backup file");
-          appData = parsed;
+          const normalized = normalizeAppData(parsed);
+          if (!normalized) throw new Error("Invalid backup file");
+          appData = normalized;
           bankTitleInput.value = appData.title || "";
           classNameInput.value = appData.className || "";
           chapterNameInput.value = appData.chapterName || "";
