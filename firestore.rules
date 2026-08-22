@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Replace this with the Google account you use for Creator PRO.
+    // For a single-owner admin tool, email allowlisting is the simplest strong boundary.
+    function isOwner() {
+      return signedIn()
+        && request.auth.token.email == 'YOUR_GOOGLE_EMAIL_HERE';
+    }
+
+    function ownsExistingBank() {
+      return resource.data.ownerUid == request.auth.uid
+        || !resource.data.keys().hasAny(['ownerUid']);
+    }
+
+    match /questionBanks/{bankId} {
+      // Allows the first save and also lets the owner migrate an older bank
+      // that was created before ownerUid was added.
+      allow create: if isOwner()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow read: if isOwner() && ownsExistingBank();
+
+      allow update: if isOwner()
+        && ownsExistingBank()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow delete: if isOwner() && ownsExistingBank();
+    }
+
+    match /questionBankLogs/{logId} {
+      allow create: if isOwner()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow read: if isOwner()
+        && resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
