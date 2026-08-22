@@ -625,8 +625,78 @@
       .preview-body{grid-template-columns:1fr}
     }
   </style>
+
+<style id="mcq-importer-styles">
+  .mcq-importer{margin:18px 0;padding:18px;border:1px solid #dbe3ef;border-radius:16px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.06)}
+  .mcq-importer h2{margin:0 0 6px;font-size:20px}.mcq-importer .muted{color:#64748b;font-size:13px}
+  .mi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+  .mi-grid label{font-size:12px;color:#475569}.mi-grid input,.mi-grid select,.mi-toolbar textarea{width:100%;box-sizing:border-box;padding:9px;border:1px solid #cbd5e1;border-radius:9px;margin-top:4px;background:#fff}
+  .mi-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  .mi-btn{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;font-weight:600}.mi-primary{background:#2563eb;color:#fff}.mi-green{background:#16a34a;color:#fff}.mi-dark{background:#0f172a;color:#fff}.mi-light{background:#e2e8f0;color:#0f172a}.mi-red{background:#dc2626;color:#fff}
+  .mi-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.mi-tab{padding:8px 13px;border:1px solid #cbd5e1;border-radius:999px;background:#f8fafc;cursor:pointer}.mi-tab.active{background:#2563eb;color:#fff;border-color:#2563eb}
+  .mi-stats{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin:10px 0}.mi-stat{padding:7px 10px;background:#f1f5f9;border-radius:8px}
+  .mi-list{display:grid;gap:10px;margin-top:12px}.mi-card{border:1px solid #dbe3ef;border-radius:12px;padding:12px;background:#f8fafc}.mi-card-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.mi-q{font-weight:700;line-height:1.45}.mi-options{display:grid;gap:5px;margin:8px 0}.mi-opt{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;background:#fff}.mi-opt.correct{border:1px solid #86efac;background:#f0fdf4}.mi-opt input{accent-color:#16a34a}.mi-meta{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:8px}.mi-meta input,.mi-meta select{width:100%;box-sizing:border-box;padding:7px;border:1px solid #cbd5e1;border-radius:7px}
+  .mi-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mi-small{font-size:12px;padding:6px 9px}
+  .mi-empty{padding:24px;text-align:center;color:#64748b;border:1px dashed #cbd5e1;border-radius:10px}
+  .mi-preview{width:100%;min-height:120px;font-family:monospace;font-size:12px}
+  .mi-help{padding:10px;border-radius:9px;background:#eff6ff;color:#1e40af;font-size:12px;line-height:1.5}
+  @media(max-width:900px){.mi-grid,.mi-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:600px){.mi-grid,.mi-meta{grid-template-columns:1fr}}
+</style>
+
 </head>
 <body class="auth-locked">
+
+<section class="mcq-importer" id="mcqImporter">
+  <h2>MCQ PDF → Question Bank Importer</h2>
+  <div class="muted">PDF se MCQ, options aur marked answer detect karke review/edit karo. Optional metadata har question par alag se add kar sakte ho.</div>
+
+  <div class="mi-help" style="margin-top:10px">
+    <b>Answer detection:</b> tool <code>Answer: B</code>, <code>Ans: (B)</code>, <code>Correct Answer: C</code>,
+    aur common ✓/✔ marks ko detect karne ki koshish karega. Agar PDF me answer diya nahi hai, answer <b>Not set</b> rahega —
+    final answer aap manually choose kar sakte ho.
+  </div>
+
+  <div class="mi-grid">
+    <label>PDF file
+      <input id="miPdf" type="file" accept=".pdf,application/pdf">
+    </label>
+    <label>Default Class
+      <input id="miClass" placeholder="e.g. 10">
+    </label>
+    <label>Default Subject
+      <input id="miSubject" placeholder="e.g. Science">
+    </label>
+    <label>Default Source
+      <input id="miSource" placeholder="e.g. NCERT">
+    </label>
+  </div>
+
+  <div class="mi-toolbar">
+    <button class="mi-btn mi-primary" id="miExtractBtn">Extract MCQs from PDF</button>
+    <button class="mi-btn mi-light" id="miClearBtn">Clear imported questions</button>
+    <button class="mi-btn mi-green" id="miJsonBtn">Export JSON</button>
+    <button class="mi-btn mi-dark" id="miJsBtn">Export JS</button>
+    <button class="mi-btn mi-light" id="miCopyJsBtn">Copy JS</button>
+    <span id="miStatus" class="muted">Ready</span>
+  </div>
+
+  <div class="mi-toolbar">
+    <label style="font-size:13px">If PDF has selectable text, use text extraction first.
+      <input type="checkbox" id="miOcrFallback" checked> OCR fallback for scanned pages
+    </label>
+  </div>
+
+  <div class="mi-tabs" id="miTabs"></div>
+  <div class="mi-stats" id="miStats"></div>
+  <div id="miList" class="mi-list"></div>
+
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer;font-weight:600">Extracted raw text (debug / correction)</summary>
+    <textarea id="miRawText" class="mi-preview" placeholder="PDF text will appear here..."></textarea>
+  </details>
+</section>
+
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
@@ -2531,5 +2601,356 @@
     window.changeReviewSection = changeReviewSection;
     window.deleteReviewQuestion = deleteReviewQuestion;
   </script>
+
+<script>
+(function(){
+  "use strict";
+
+  const SECTIONS = ["A","B","C","D","E"];
+  const state = {
+    active: "A",
+    data: {A:[],B:[],C:[],D:[],E:[]},
+    rawText: ""
+  };
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+
+  function uid(){
+    return "q_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
+  }
+
+  function cleanText(s){
+    return String(s||"").replace(/\u00a0/g," ").replace(/[ \t]+/g," ").replace(/\s+\n/g,"\n").trim();
+  }
+
+  function normalizeOption(s){
+    return cleanText(String(s||"").replace(/^[\s]*(?:[A-H]|[1-8])[\s]*[.)\-:]\s*/i,""));
+  }
+
+  function detectAnswer(text, options){
+    const t = String(text||"");
+    const patterns = [
+      /(?:correct\s*)?answer\s*(?:is|:|-)?\s*[\(\[]?\s*([A-H])\s*[\)\]]?/i,
+      /\bans(?:wer)?\s*[:\-]\s*[\(\[]?\s*([A-H])\s*[\)\]]?/i,
+      /(?:correct|right)\s*(?:option|answer)?\s*[:\-]?\s*([A-H])\b/i
+    ];
+    for(const re of patterns){
+      const m=t.match(re); if(m) return m[1].toUpperCase();
+    }
+    // Marked option patterns such as "✓ B) ..."
+    for(let i=0;i<options.length;i++){
+      if(/[✓✔☑]\s*$/.test(options[i].rawPrefix||"") || /^[✓✔☑]/.test(options[i].raw||"")){
+        return String.fromCharCode(65+i);
+      }
+    }
+    return "";
+  }
+
+  function splitLines(text){
+    return cleanText(text).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  }
+
+  function parseQuestions(text, defaults){
+    const lines = splitLines(text);
+    const out = [];
+    let current = null;
+
+    const qRe = /^(?:Q(?:uestion)?\s*)?(\d{1,4})\s*[\).:\-]\s+(.+)$/i;
+    const qLoose = /^(?:Q(?:uestion)?\s*)?(\d{1,4})\s+(.+)$/i;
+    const optRe = /^\s*[\(\[]?([A-H])[\)\].:\-]\s*(.+)$/i;
+    const ansRe = /^(?:answer|ans|correct\s*answer|correct\s*option)\s*[:\-]?\s*(.+)$/i;
+
+    function finish(){
+      if(!current) return;
+      current.question = cleanText(current.question);
+      current.options = current.options.map(o => cleanText(o));
+      if(current.question && current.options.length >= 2){
+        let ans = detectAnswer(current.answerLine || "", current.options.map(x=>({raw:x})));
+        if(!ans && current.answerLine){
+          const m=current.answerLine.match(/^\s*[\(\[]?([A-H])[\)\]]?/i); if(m) ans=m[1].toUpperCase();
+        }
+        current.answer = ans;
+        out.push(current);
+      }
+      current=null;
+    }
+
+    for(const line of lines){
+      let m=line.match(qRe) || line.match(qLoose);
+      if(m && (!/^(?:answer|ans)\b/i.test(line))){
+        finish();
+        current = {
+          id:uid(), section:defaults.section || "A", number:m[1],
+          question:m[2], options:[], answer:"", answerLine:"",
+          class:defaults.class||"", subject:defaults.subject||"", source:defaults.source||"",
+          chapter:"", hardness:"", topic:"", tags:"", explanation:"", image:""
+        };
+        continue;
+      }
+      if(!current) continue;
+
+      const am=line.match(ansRe);
+      if(am){ current.answerLine=am[1]; continue; }
+
+      const om=line.match(optRe);
+      if(om){
+        current.options.push(normalizeOption(om[2]));
+        continue;
+      }
+
+      // Common PDFs put answer after option with a check mark.
+      if(/^[✓✔☑]\s*/.test(line) && current.options.length){
+        current.options[current.options.length-1]=normalizeOption(line);
+        current.answer=String.fromCharCode(64+current.options.length);
+        continue;
+      }
+
+      // Continue wrapped question/option lines.
+      if(current.options.length===0) current.question += " " + line;
+      else {
+        const last=current.options.length-1;
+        current.options[last] = cleanText(current.options[last] + " " + normalizeOption(line));
+      }
+    }
+    finish();
+    return out;
+  }
+
+  async function extractPdfText(file){
+    if(!window.pdfjsLib) throw new Error("PDF.js not loaded.");
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    let all = [];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const text = content.items.map(x=>x.str).join("\n");
+      all.push("=== PAGE "+p+" ===\n"+text);
+    }
+    return {text:all.join("\n"), pages:pdf.numPages, buf};
+  }
+
+  async function ocrPdf(file){
+    if(!window.pdfjsLib || !window.Tesseract) throw new Error("PDF.js/Tesseract not loaded.");
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    let all=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      setStatus("OCR page "+p+" / "+pdf.numPages+"...");
+      const page=await pdf.getPage(p);
+      const viewport=page.getViewport({scale:1.8});
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+      await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+      const result=await Tesseract.recognize(canvas,"eng+hin",{logger:m=>{
+        if(m.status && typeof m.progress==="number") setStatus("OCR "+p+"/"+pdf.numPages+" — "+m.status+" "+Math.round(m.progress*100)+"%");
+      }});
+      all.push("=== PAGE "+p+" ===\n"+result.data.text);
+    }
+    return all.join("\n");
+  }
+
+  function setStatus(s){ $("miStatus").textContent=s; }
+
+  function renderTabs(){
+    $("miTabs").innerHTML=SECTIONS.map(s=>{
+      const n=state.data[s].length;
+      return `<button class="mi-tab ${state.active===s?"active":""}" data-sec="${s}">Section ${s} (${n})</button>`;
+    }).join("");
+    $("miTabs").querySelectorAll(".mi-tab").forEach(b=>b.onclick=()=>{
+      state.active=b.dataset.sec; render();
+    });
+  }
+
+  function renderStats(){
+    const all=SECTIONS.flatMap(s=>state.data[s]);
+    const answered=all.filter(q=>q.answer).length;
+    $("miStats").innerHTML=[
+      ["Total",all.length],["Answered",answered],["Need answer",all.length-answered],
+      ...SECTIONS.map(s=>["Section "+s,state.data[s].length])
+    ].map(x=>`<span class="mi-stat"><b>${x[0]}:</b> ${x[1]}</span>`).join("");
+  }
+
+  function optionEditor(q,i){
+    return q.options.map((o,j)=>{
+      const letter=String.fromCharCode(65+j);
+      const checked=q.answer===letter;
+      return `<label class="mi-opt ${checked?"correct":""}">
+        <input type="radio" name="ans_${q.id}" ${checked?"checked":""} data-q="${q.id}" data-ans="${letter}">
+        <b>${letter}.</b><span>${esc(o)}</span>
+      </label>`;
+    }).join("");
+  }
+
+  function renderList(){
+    const arr=state.data[state.active];
+    if(!arr.length){
+      $("miList").innerHTML=`<div class="mi-empty">Section ${state.active} me abhi koi question nahi hai.</div>`;
+      return;
+    }
+    $("miList").innerHTML=arr.map((q,idx)=>`
+      <article class="mi-card" data-id="${q.id}">
+        <div class="mi-card-head">
+          <div class="mi-q">${idx+1}. <input class="mi-qedit" data-field="question" value="${esc(q.question)}" style="width:calc(100% - 35px);padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-weight:700"></div>
+          <button class="mi-btn mi-red mi-small" data-action="delete">Delete</button>
+        </div>
+        <div class="mi-options">${optionEditor(q,idx)}</div>
+        <div class="mi-meta">
+          <input data-field="class" value="${esc(q.class)}" placeholder="Class">
+          <input data-field="subject" value="${esc(q.subject)}" placeholder="Subject">
+          <input data-field="chapter" value="${esc(q.chapter)}" placeholder="Chapter (optional)">
+          <select data-field="hardness">
+            ${["","easy","medium","hard"].map(v=>`<option value="${v}" ${q.hardness===v?"selected":""}>${v||"Hardness (optional)"}</option>`).join("")}
+          </select>
+          <input data-field="source" value="${esc(q.source)}" placeholder="Source (optional)">
+          <input data-field="topic" value="${esc(q.topic)}" placeholder="Topic (optional)">
+          <input data-field="tags" value="${esc(q.tags)}" placeholder="Tags (optional)">
+          <input data-field="explanation" value="${esc(q.explanation)}" placeholder="Explanation (optional)">
+        </div>
+        <div class="mi-card-actions">
+          <button class="mi-btn mi-light mi-small" data-action="move-prev">← Previous section</button>
+          <button class="mi-btn mi-light mi-small" data-action="move-next">Next section →</button>
+          <button class="mi-btn mi-light mi-small" data-action="duplicate">Duplicate</button>
+        </div>
+      </article>`).join("");
+
+    $("miList").querySelectorAll(".mi-card").forEach(card=>{
+      const id=card.dataset.id;
+      const q=state.data[state.active].find(x=>x.id===id);
+      card.querySelectorAll("[data-field]").forEach(el=>{
+        el.onchange=()=>{ q[el.dataset.field]=el.value; renderStats(); };
+      });
+      card.querySelectorAll("input[type=radio]").forEach(r=>r.onchange=()=>{ q.answer=r.dataset.ans; renderList(); });
+      card.querySelector('[data-action="delete"]').onclick=()=>{
+        state.data[state.active]=state.data[state.active].filter(x=>x.id!==id); render();
+      };
+      card.querySelector('[data-action="duplicate"]').onclick=()=>{
+        const copy=JSON.parse(JSON.stringify(q)); copy.id=uid(); state.data[state.active].splice(state.data[state.active].indexOf(q)+1,0,copy); render();
+      };
+      card.querySelector('[data-action="move-prev"]').onclick=()=>moveQuestion(id,-1);
+      card.querySelector('[data-action="move-next"]').onclick=()=>moveQuestion(id,1);
+    });
+  }
+
+  function moveQuestion(id,delta){
+    const from=SECTIONS.indexOf(state.active);
+    const to=Math.max(0,Math.min(SECTIONS.length-1,from+delta));
+    if(from===to) return;
+    const arr=state.data[state.active];
+    const idx=arr.findIndex(q=>q.id===id);
+    if(idx<0) return;
+    const [q]=arr.splice(idx,1); q.section=SECTIONS[to]; state.data[SECTIONS[to]].push(q); state.active=SECTIONS[to]; render();
+  }
+
+  function render(){
+    renderTabs(); renderStats(); renderList();
+    $("miRawText").value=state.rawText;
+  }
+
+  function buildExportData(){
+    const meta={
+      exportedAt:new Date().toISOString(),
+      formatVersion:"2.0",
+      sourceTool:"Creator PRO MCQ PDF Importer",
+      sections:{}
+    };
+    SECTIONS.forEach(s=>meta.sections[s]=state.data[s].map((q,i)=>({
+      id:q.id, number:i+1, question:q.question, options:q.options.map((text,j)=>({
+        label:String.fromCharCode(65+j), text, correct:q.answer===String.fromCharCode(65+j)
+      })),
+      answer:q.answer||null,
+      class:q.class||null, subject:q.subject||null, chapter:q.chapter||null,
+      hardness:q.hardness||null, source:q.source||null, topic:q.topic||null,
+      tags:q.tags||null, explanation:q.explanation||null
+    })));
+    return meta;
+  }
+
+  function download(name,text,type){
+    const blob=new Blob([text],{type:type||"text/plain;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+
+  function buildJS(){
+    const data=buildExportData();
+    return `/* Creator PRO Question Bank — generated ${data.exportedAt} */\nwindow.QUESTION_BANK = ${JSON.stringify(data,null,2)};\n`;
+  }
+
+  async function copyJS(){
+    const js=buildJS();
+    try{await navigator.clipboard.writeText(js);setStatus("JS copied to clipboard.");}
+    catch(e){setStatus("Clipboard blocked — use Export JS.");}
+  }
+
+  async function saveImportedToFirebase(){
+    const user=window.firebaseCurrentUser;
+    const services=window.firebaseServices;
+    if(!user || !services) { setStatus("Sign in first; Firebase save skipped."); return; }
+    try{
+      const {db,doc,setDoc,serverTimestamp}=services;
+      const bankId="paper_import_"+Date.now();
+      const payload=buildExportData();
+      await setDoc(doc(db,"questionBanks",bankId),{
+        ownerUid:user.uid, ownerEmail:user.email||"",
+        title:"Imported MCQ Bank "+new Date().toLocaleString(),
+        formatVersion:"2.0", data:payload.sections,
+        createdAt:serverTimestamp(), updatedAt:serverTimestamp()
+      });
+      setStatus("Imported bank saved to Firebase: "+bankId);
+    }catch(e){console.error(e);setStatus("Firebase save failed: "+(e.message||e));}
+  }
+
+  $("miExtractBtn").onclick=async()=>{
+    const file=$("miPdf").files[0];
+    if(!file){setStatus("Please select a PDF.");return;}
+    try{
+      setStatus("Reading PDF text...");
+      const result=await extractPdfText(file);
+      let text=result.text;
+      let parsed=parseQuestions(text,{
+        section:state.active,class:$("miClass").value.trim(),
+        subject:$("miSubject").value.trim(),source:$("miSource").value.trim()
+      });
+      // Scanned/poor text PDFs: OCR fallback.
+      if(parsed.length===0 && $("miOcrFallback").checked){
+        setStatus("No reliable MCQs from text layer. Starting OCR...");
+        text=await ocrPdf(file);
+        parsed=parseQuestions(text,{
+          section:state.active,class:$("miClass").value.trim(),
+          subject:$("miSubject").value.trim(),source:$("miSource").value.trim()
+        });
+      }
+      state.rawText=text;
+      if(!parsed.length){
+        setStatus("No MCQs detected. Raw text is available below for correction.");
+      }else{
+        state.data[state.active].push(...parsed);
+        setStatus(parsed.length+" MCQs imported into Section "+state.active+". Review answers before saving.");
+      }
+      render();
+    }catch(e){console.error(e);setStatus("Import failed: "+(e.message||e));}
+  };
+
+  $("miClearBtn").onclick=()=>{
+    if(confirm("Clear all imported questions from all sections?")){
+      state.data={A:[],B:[],C:[],D:[],E:[]}; state.rawText=""; render(); setStatus("Cleared.");
+    }
+  };
+  $("miJsonBtn").onclick=()=>download("question-bank.json",JSON.stringify(buildExportData(),null,2),"application/json");
+  $("miJsBtn").onclick=()=>download("question-bank.js",buildJS(),"application/javascript");
+  $("miCopyJsBtn").onclick=copyJS;
+
+  render();
+
+  // Expose data for other Creator features.
+  window.getImportedQuestionBank = buildExportData;
+  window.saveImportedQuestionBank = saveImportedToFirebase;
+})();
+</script>
+
 </body>
 </html>
