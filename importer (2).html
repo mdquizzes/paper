@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MCQ PDF / Text → Question Bank Importer</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+</script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f6fa;color:#0f172a;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.wrap{max-width:1500px;margin:auto;padding:20px}
+.panel{background:#fff;border:1px solid #d9e2ec;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 4px 18px rgba(15,23,42,.05)}
+h1{margin:0 0 5px;font-size:25px}.muted{color:#64748b;font-size:13px;line-height:1.5}
+h3{margin:0 0 5px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.field{font-size:12px;color:#475569}
+.field input,.field select,.field textarea,.text-input{width:100%;margin-top:4px;padding:9px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}
+.toolbar,.actions,.tabs,.stats,.checkrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.toolbar{margin-top:12px}
+button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;font-weight:650}
+.primary{background:#2563eb;color:white}.green{background:#16a34a;color:white}.dark{background:#0f172a;color:white}
+.light{background:#e2e8f0;color:#0f172a}.red{background:#dc2626;color:white}.small{padding:6px 9px;font-size:12px}
+.help{padding:11px 13px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;color:#1e3a8a;font-size:12px;line-height:1.55;margin-top:12px}
+.warn{padding:11px 13px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;color:#9a3412;font-size:12px;line-height:1.55;margin-top:10px}
+.source-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.source-box{border:1px solid #dbe3ef;border-radius:12px;padding:12px}
+.source-box textarea{width:100%;min-height:170px;resize:vertical;padding:10px;border:1px solid #cbd5e1;border-radius:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45}
+.common{border:1px solid #93c5fd;background:#eff6ff;border-radius:13px;padding:14px;margin-top:14px}
+.common-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px}
+.common input,.common select{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+.export-fields{margin-top:10px;padding:10px;background:#fff;border:1px dashed #93c5fd;border-radius:9px}
+.export-fields label{display:inline-flex;gap:5px;align-items:center;margin:3px 10px 3px 0;font-size:12px}
+.tabs{margin-bottom:10px}.tab{border:1px solid #cbd5e1;background:#fff}.tab.active{background:#2563eb;color:#fff;border-color:#2563eb}
+.stat{padding:7px 10px;background:#f1f5f9;border-radius:8px;font-size:13px}
+.list{display:grid;gap:12px}
+.card{background:#fff;border:1px solid #d5dfeb;border-radius:14px;padding:14px}
+.card-head{display:flex;gap:12px;align-items:flex-start}.grow{flex:1}
+.q-label{font-weight:750;margin-bottom:5px}
+.question{width:100%;min-height:125px;resize:vertical;padding:12px;border:1px solid #b9c8d8;border-radius:9px;line-height:1.55;font-size:16px;background:#fff}
+.options{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}
+.option{display:flex;align-items:flex-start;gap:8px;border:1px solid #dbe3eb;border-radius:10px;padding:8px;background:#f8fafc;min-height:100px}
+.option.correct{border-color:#86efac;background:#f0fdf4}
+.option input{margin-top:9px;accent-color:#16a34a}
+.option b{margin-top:7px}
+.option textarea{width:100%;min-height:78px;resize:vertical;padding:8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;line-height:1.4}
+.meta{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px}
+.meta input,.meta select{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+.empty{padding:28px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b}
+.raw{width:100%;min-height:160px;padding:10px;border:1px solid #cbd5e1;border-radius:9px;font-family:monospace;font-size:12px}
+.badge{display:inline-block;padding:4px 7px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700}
+.badge.ok{background:#dcfce7;color:#166534}
+.validation{font-size:12px;margin-top:8px}
+@media(max-width:1050px){.grid,.common-grid,.meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:800px){.source-grid,.options{grid-template-columns:1fr}}
+@media(max-width:600px){.grid,.common-grid,.meta{grid-template-columns:1fr}}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<div class="panel">
+  <h1>MCQ PDF / Text → Question Bank Importer</h1>
+  <div class="muted">
+    PDF extraction + OCR fallback + clean text import. Four option boxes are always kept so missing options can be corrected manually.
+    Mathematical Unicode such as √, ∑, ≤, ≥, °, ², ³ is preserved whenever the source provides it.
+  </div>
+
+  <div class="help">
+    <b>Best accuracy workflow:</b> Agar PDF text layer clean hai to PDF import use karo.
+    Agar PDF scanned/image hai to OCR fallback use hoga.
+    <b>Sabse reliable:</b> PDF ke questions/answers ko GPT se clean structured text me nikal kar
+    neeche <b>Clean Text Import</b> me paste karo. Tool source text ko silently "correct" nahi karega.
+  </div>
+
+  <div class="grid">
+    <label class="field">PDF file
+      <input id="pdfFile" type="file" accept=".pdf,application/pdf">
+    </label>
+    <label class="field">Default Class
+      <input id="defClass" placeholder="e.g. 10">
+    </label>
+    <label class="field">Default Subject
+      <input id="defSubject" placeholder="e.g. Mathematics">
+    </label>
+    <label class="field">Default Source
+      <input id="defSource" placeholder="e.g. NCERT">
+    </label>
+  </div>
+
+  <div class="toolbar">
+    <button class="primary" id="pdfBtn">Extract from PDF</button>
+    <button class="light" id="ocrBtn">Force OCR PDF</button>
+    <button class="light" id="clearBtn">Clear all</button>
+    <button class="green" id="jsonBtn">Export JSON</button>
+    <button class="dark" id="jsBtn">Export JS</button>
+    <button class="light" id="copyBtn">Copy JS</button>
+    <label class="muted"><input id="validate4" type="checkbox" checked> Require 4 options warning</label>
+    <span id="status" class="muted">Ready</span>
+  </div>
+
+  <div class="source-grid">
+    <div class="source-box">
+      <h3>Clean Text Import</h3>
+      <div class="muted">
+        Recommended format:
+        <code>Q1. question</code><br>
+        <code>A. option</code> <code>B. option</code> <code>C. option</code> <code>D. option</code><br>
+        <code>Answer: B</code>
+      </div>
+      <textarea id="cleanText" placeholder="Paste GPT-cleaned MCQ text here..."></textarea>
+      <div class="actions" style="margin-top:8px">
+        <button class="primary" id="textImportBtn">Import Clean Text</button>
+      </div>
+    </div>
+
+    <div class="source-box">
+      <h3>Answer Key / Correct Answers</h3>
+      <div class="muted">
+        Optional. Examples: <code>1-B, 2-C, 3-A</code> or <code>Q1 B</code> or
+        <code>1. B</code>. This can be pasted separately from the questions.
+      </div>
+      <textarea id="answerKey" placeholder="1-B&#10;2-C&#10;3-A&#10;..."></textarea>
+      <div class="actions" style="margin-top:8px">
+        <button class="light" id="applyAnswerKeyBtn">Apply Answer Key</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="common">
+    <h3>Common Category / Metadata — optional</h3>
+    <div class="muted">
+      Example: Chapter = <b>Chapter 1</b> → Apply to current section → current section ke saare questions me Chapter 1.
+      Blank field existing value ko change nahi karega.
+    </div>
+
+    <div class="common-grid">
+      <label class="field">Chapter<input id="commonChapter" placeholder="Chapter 1"></label>
+      <label class="field">Difficulty<select id="commonDifficulty"><option value="">Keep blank</option><option>easy</option><option>medium</option><option>hard</option></select></label>
+      <label class="field">Marks<input id="commonMarks" placeholder="2"></label>
+      <label class="field">Class<input id="commonClass" placeholder="10"></label>
+      <label class="field">Subject<input id="commonSubject" placeholder="Mathematics"></label>
+      <label class="field">Source<input id="commonSource" placeholder="NCERT"></label>
+    </div>
+
+    <div class="actions" style="margin-top:9px">
+      <button class="primary" id="applyCommon">Apply to current section</button>
+      <button class="light" id="clearCommon">Clear common fields</button>
+    </div>
+
+    <div class="export-fields">
+      <b>JS me kaunse category fields rakhne hain?</b><br>
+      <label><input id="outChapter" type="checkbox" checked> Chapter</label>
+      <label><input id="outDifficulty" type="checkbox" checked> Difficulty</label>
+      <label><input id="outMarks" type="checkbox" checked> Marks</label>
+      <label><input id="outClass" type="checkbox" checked> Class</label>
+      <label><input id="outSubject" type="checkbox" checked> Subject</label>
+      <label><input id="outSource" type="checkbox" checked> Source</label>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="tabs" id="tabs"></div>
+  <div class="stats" id="stats"></div>
+  <div id="list" class="list"></div>
+</div>
+
+<div class="panel">
+  <details>
+    <summary><b>Raw extracted source text</b></summary>
+    <textarea id="rawText" class="raw"></textarea>
+  </details>
+</div>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const SECTIONS=["A","B","C","D","E"];
+let active="A";
+let data={A:[],B:[],C:[],D:[],E:[]};
+let rawText="";
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=> "q_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,9);
+const clean=s=>String(s??"").replace(/\u00a0/g," ").replace(/[ \t]+/g," ").trim();
+function setStatus(s){$("status").textContent=s}
+
+function defaults(){
+  return {
+    class:$("defClass").value.trim(),
+    subject:$("defSubject").value.trim(),
+    source:$("defSource").value.trim()
+  };
+}
+
+function makeQ(number,question){
+  return {
+    id:uid(),number:String(number||""),question:clean(question),
+    options:["","","",""],answer:"",
+    chapter:"",difficulty:"",marks:"",
+    class:defaults().class,subject:defaults().subject,source:defaults().source
+  };
+}
+
+/* Detect A./A)/A:/(A), B..., including multiple options on one line. */
+function findOptions(line){
+  const s=String(line||"").trim();
+  const re=/(?:^|[\s|])(?:\(|\[)?([A-H])(?:\)|\]|\.)\s*/gi;
+  let m, hits=[];
+  while((m=re.exec(s))) hits.push({letter:m[1].toUpperCase(),start:m.index,end:re.lastIndex});
+  if(!hits.length)return null;
+
+  const pieces=[];
+  for(let i=0;i<hits.length;i++){
+    const before=i===0?s.slice(0,hits[i].start).trim():"";
+    if(i===0 && before && !/^[✓✔☑:;\-–—]*$/.test(before)) {
+      // allow question text before the first option only when this line is explicitly being split later
+      if(!/^[A-H][\.\)]/.test(s)) return null;
+    }
+    const end=i+1<hits.length?hits[i+1].start:s.length;
+    let txt=s.slice(hits[i].end,end).trim();
+    const marked=/[✓✔☑]/.test(txt);
+    txt=txt.replace(/[✓✔☑]/g,"").trim();
+    if(txt)pieces.push({letter:hits[i].letter,text:txt,marked});
+  }
+  return pieces.length?pieces:null;
+}
+
+function answerFromLine(line){
+  const s=String(line||"");
+  const regs=[
+    /\b(?:correct\s*)?answer\s*(?:is|:|-)?\s*[\(\[]?\s*([A-H])\s*[\)\]]?/i,
+    /\bans(?:wer)?\s*[:\-]\s*[\(\[]?\s*([A-H])\s*[\)\]]?/i,
+    /\b(?:correct|right)\s*(?:option|answer)?\s*[:\-]?\s*([A-H])\b/i
+  ];
+  for(const r of regs){const m=s.match(r);if(m)return m[1].toUpperCase()}
+  return "";
+}
+
+function parseAnswerKey(text){
+  const map={};
+  const lines=String(text||"").split(/\r?\n/);
+  for(const line of lines){
+    const s=line.trim();
+    let m=s.match(/(?:Q(?:uestion)?\s*)?(\d{1,4})\s*[\.\)\-:]\s*\(?([A-H])\)?\b/i)
+         ||s.match(/(?:Q(?:uestion)?\s*)?(\d{1,4})\s+[\(\[]?([A-H])[\)\]]?\b/i);
+    if(m)map[String(Number(m[1]))]=m[2].toUpperCase();
+  }
+  return map;
+}
+
+function parseMCQ(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const out=[];
+  let q=null;
+  let qNumber=0;
+
+  function finish(){
+    if(!q)return;
+    q.question=clean(q.question);
+    while(q.options.length<4)q.options.push("");
+    q.options=q.options.slice(0,4);
+    if(q.question && q.options.filter(Boolean).length>=2)out.push(q);
+    q=null;
+  }
+
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+
+    // Answer lines are attached to the current question.
+    const ans=answerFromLine(line);
+    if(ans && /answer|ans|correct|right/i.test(line)){
+      if(q)q.answer=ans;
+      continue;
+    }
+
+    // Question starts.
+    let qm=line.match(/^(?:Q(?:uestion)?\s*)?(\d{1,4})\s*[\.\):\-]\s*(.+)$/i)
+          ||line.match(/^Q(?:uestion)?\s*(\d{1,4})\s+(.+)$/i);
+
+    if(qm){
+      finish();
+      q=makeQ(qm[1],qm[2]);
+
+      // Inline options after question.
+      const pieces=findOptions(qm[2]);
+      if(pieces && pieces.length){
+        const firstIndex=qm[2].search(/(?:^|\s)(?:\(|\[)?[A-H](?:\)|\]|\.)\s/i);
+        if(firstIndex>0){
+          q.question=clean(qm[2].slice(0,firstIndex));
+          pieces.forEach((p,j)=>{if(j<4)q.options[j]=p.text});
+          const marked=pieces.find(p=>p.marked);if(marked)q.answer=marked.letter;
+        }
+      }
+      continue;
+    }
+
+    if(!q)continue;
+
+    const pieces=findOptions(line);
+    if(pieces){
+      // If multiple options occur on one line, fill all.
+      pieces.forEach(p=>{
+        const idx=p.letter.charCodeAt(0)-65;
+        if(idx>=0&&idx<4)q.options[idx]=p.text;
+        if(p.marked)q.answer=p.letter;
+      });
+      continue;
+    }
+
+    if(/^[✓✔☑]/.test(line) && q.options.some(Boolean)){
+      const idx=q.options.filter(Boolean).length-1;
+      if(idx>=0&&idx<4)q.answer=String.fromCharCode(65+idx);
+      continue;
+    }
+
+    // Wrapped question before options.
+    if(q.options.filter(Boolean).length===0)q.question=clean(q.question+" "+line);
+    else{
+      // Wrapped option: append to the latest non-empty option.
+      let idx=-1;
+      for(let j=3;j>=0;j--)if(q.options[j]){idx=j;break}
+      if(idx>=0)q.options[idx]=clean(q.options[idx]+" "+line);
+      else q.question=clean(q.question+" "+line);
+    }
+  }
+  finish();
+  return out;
+}
+
+function applyAnswerMap(arr,map){
+  arr.forEach(q=>{
+    const a=map[String(Number(q.number))];
+    if(a && a>="A" && a<="H")q.answer=a;
+  });
+}
+
+/* Keep Unicode exactly as supplied by PDF/text. Only trim layout spaces. */
+async function pdfText(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let pages=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    setStatus("Reading PDF text page "+p+" / "+pdf.numPages+"...");
+    const page=await pdf.getPage(p);
+    const c=await page.getTextContent();
+    // Preserve each PDF text item and its Unicode glyphs.
+    pages.push("=== PAGE "+p+" ===\n"+c.items.map(x=>x.str).join("\n"));
+  }
+  return pages.join("\n");
+}
+
+async function pdfOCR(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let pages=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    setStatus("OCR page "+p+" / "+pdf.numPages+"...");
+    const page=await pdf.getPage(p);
+    const vp=page.getViewport({scale:2.2});
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);
+    await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+    const r=await Tesseract.recognize(canvas,"eng+hin",{logger:m=>{
+      if(m.status && typeof m.progress==="number")
+        setStatus("OCR "+p+" — "+m.status+" "+Math.round(m.progress*100)+"%");
+    }});
+    pages.push("=== PAGE "+p+" ===\n"+r.data.text);
+  }
+  return pages.join("\n");
+}
+
+function addQuestions(arr){
+  data[active].push(...arr);
+  render();
+}
+
+function render(){
+  $("tabs").innerHTML=SECTIONS.map(s=>
+    `<button class="tab ${active===s?"active":""}" data-s="${s}">Section ${s} (${data[s].length})</button>`).join("");
+  $("tabs").querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{active=b.dataset.s;render()});
+
+  const all=SECTIONS.flatMap(s=>data[s]);
+  const answered=all.filter(q=>q.answer).length;
+  $("stats").innerHTML=[
+    ["Total",all.length],["Answered",answered],["Need answer",all.length-answered],
+    ...SECTIONS.map(s=>["Section "+s,data[s].length])
+  ].map(x=>`<span class="stat"><b>${x[0]}:</b> ${x[1]}</span>`).join("");
+
+  const arr=data[active];
+  if(!arr.length){
+    $("list").innerHTML=`<div class="empty">Section ${active} me abhi koi question nahi hai.</div>`;
+    $("rawText").value=rawText;return;
+  }
+
+  $("list").innerHTML=arr.map((q,i)=>{
+    const n=q.options.filter(Boolean).length;
+    const warning=$("validate4").checked && n<4
+      ? `<div class="validation"><span class="badge">Check: ${n}/4 options detected</span> — missing option ko neeche manually fill karo.</div>`
+      : `<div class="validation"><span class="badge ok">4/4 options present</span></div>`;
+
+    return `<article class="card" data-id="${q.id}">
+      <div class="card-head">
+        <div class="grow">
+          <div class="q-label">Question ${i+1}</div>
+          <textarea class="question" data-field="question" placeholder="Full question">${esc(q.question)}</textarea>
+        </div>
+        <button class="red small" data-action="delete">Delete</button>
+      </div>
+
+      ${warning}
+
+      <div class="options">
+        ${[0,1,2,3].map(j=>{
+          const L=String.fromCharCode(65+j);
+          return `<label class="option ${q.answer===L?"correct":""}">
+            <input type="radio" name="ans_${q.id}" data-answer="${L}" ${q.answer===L?"checked":""} title="Mark ${L} as correct answer">
+            <b>${L}.</b>
+            <textarea data-option="${j}" placeholder="Option ${L} — always available">${esc(q.options[j]||"")}</textarea>
+          </label>`;
+        }).join("")}
+      </div>
+
+      <div class="meta">
+        <input data-field="chapter" value="${esc(q.chapter)}" placeholder="Chapter (optional)">
+        <select data-field="difficulty">
+          ${["","easy","medium","hard"].map(v=>`<option value="${v}" ${q.difficulty===v?"selected":""}>${v||"Difficulty (optional)"}</option>`).join("")}
+        </select>
+        <input data-field="marks" value="${esc(q.marks)}" placeholder="Marks (optional)">
+        <input data-field="class" value="${esc(q.class)}" placeholder="Class (optional)">
+        <input data-field="subject" value="${esc(q.subject)}" placeholder="Subject (optional)">
+        <input data-field="source" value="${esc(q.source)}" placeholder="Source (optional)">
+      </div>
+
+      <div class="actions">
+        <button class="light small" data-action="prev">← Previous section</button>
+        <button class="light small" data-action="next">Next section →</button>
+        <button class="light small" data-action="duplicate">Duplicate</button>
+      </div>
+    </article>`;
+  }).join("");
+
+  $("list").querySelectorAll(".card").forEach(card=>{
+    const q=data[active].find(x=>x.id===card.dataset.id);
+    card.querySelectorAll("[data-field]").forEach(el=>el.oninput=()=>q[el.dataset.field]=el.value);
+    card.querySelectorAll("[data-option]").forEach(el=>el.oninput=()=>q.options[Number(el.dataset.option)]=el.value);
+    card.querySelectorAll("[data-answer]").forEach(el=>el.onchange=()=>{q.answer=el.dataset.answer;render()});
+    card.querySelector('[data-action="delete"]').onclick=()=>{data[active]=data[active].filter(x=>x.id!==q.id);render()};
+    card.querySelector('[data-action="duplicate"]').onclick=()=>{
+      const c=JSON.parse(JSON.stringify(q));c.id=uid();
+      data[active].splice(data[active].indexOf(q)+1,0,c);render();
+    };
+    card.querySelector('[data-action="prev"]').onclick=()=>moveQuestion(q,-1);
+    card.querySelector('[data-action="next"]').onclick=()=>moveQuestion(q,1);
+  });
+
+  $("rawText").value=rawText;
+}
+
+function moveQuestion(q,delta){
+  const a=SECTIONS.indexOf(active),b=Math.max(0,Math.min(SECTIONS.length-1,a+delta));
+  if(a===b)return;
+  data[active]=data[active].filter(x=>x.id!==q.id);
+  data[SECTIONS[b]].push(q);active=SECTIONS[b];render();
+}
+
+function buildExport(){
+  const checked=id=>$(id).checked;
+  const result={
+    formatVersion:"4.0",
+    exportedAt:new Date().toISOString(),
+    sections:{}
+  };
+
+  SECTIONS.forEach(s=>{
+    result.sections[s]=data[s].map(q=>{
+      const x={
+        question:q.question,
+        options:q.options.map((text,j)=>({
+          label:String.fromCharCode(65+j),
+          text:text||"",
+          correct:q.answer===String.fromCharCode(65+j)
+        })),
+        answer:q.answer||null
+      };
+      if(checked("outChapter"))x.chapter=q.chapter||null;
+      if(checked("outDifficulty"))x.difficulty=q.difficulty||null;
+      if(checked("outMarks"))x.marks=q.marks||null;
+      if(checked("outClass"))x.class=q.class||null;
+      if(checked("outSubject"))x.subject=q.subject||null;
+      if(checked("outSource"))x.source=q.source||null;
+      return x;
+    });
+  });
+  return result;
+}
+
+function buildJS(){
+  return `/* MCQ Question Bank - generated by importer.html */\nwindow.QUESTION_BANK = ${JSON.stringify(buildExport(),null,2)};\n`;
+}
+function download(name,text,type){
+  const blob=new Blob([text],{type});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+$("pdfBtn").onclick=async()=>{
+  const file=$("pdfFile").files[0];
+  if(!file){setStatus("PDF select karo.");return}
+  try{
+    const text=await pdfText(file);
+    rawText=text;
+    let arr=parseMCQ(text);
+    if(arr.length===0){
+      setStatus("Text layer se MCQ nahi mile. Force OCR try karo.");
+    }else{
+      addQuestions(arr);
+      setStatus(arr.length+" MCQs imported. Please review.");
+    }
+  }catch(e){console.error(e);setStatus("PDF extraction failed: "+(e.message||e))}
+};
+
+$("ocrBtn").onclick=async()=>{
+  const file=$("pdfFile").files[0];
+  if(!file){setStatus("PDF select karo.");return}
+  try{
+    const text=await pdfOCR(file);
+    rawText=text;
+    const arr=parseMCQ(text);
+    addQuestions(arr);
+    setStatus(arr.length+" MCQs imported from OCR. Mathematical symbols should be reviewed carefully.");
+  }catch(e){console.error(e);setStatus("OCR failed: "+(e.message||e))}
+};
+
+$("textImportBtn").onclick=()=>{
+  const text=$("cleanText").value.trim();
+  if(!text){setStatus("Clean Text box empty hai.");return}
+  rawText=text;
+  const arr=parseMCQ(text);
+  addQuestions(arr);
+  setStatus(arr.length+" MCQs imported from clean text.");
+};
+
+$("applyAnswerKeyBtn").onclick=()=>{
+  const map=parseAnswerKey($("answerKey").value);
+  const all=SECTIONS.flatMap(s=>data[s]);
+  applyAnswerMap(all,map);
+  render();
+  setStatus(Object.keys(map).length+" answer-key entries applied.");
+};
+
+$("applyCommon").onclick=()=>{
+  const v={
+    chapter:$("commonChapter").value.trim(),
+    difficulty:$("commonDifficulty").value,
+    marks:$("commonMarks").value.trim(),
+    class:$("commonClass").value.trim(),
+    subject:$("commonSubject").value.trim(),
+    source:$("commonSource").value.trim()
+  };
+  data[active].forEach(q=>{
+    if(v.chapter)q.chapter=v.chapter;
+    if(v.difficulty)q.difficulty=v.difficulty;
+    if(v.marks)q.marks=v.marks;
+    if(v.class)q.class=v.class;
+    if(v.subject)q.subject=v.subject;
+    if(v.source)q.source=v.source;
+  });
+  render();setStatus("Common metadata applied to Section "+active+".");
+};
+
+$("clearCommon").onclick=()=>{
+  ["commonChapter","commonMarks","commonClass","commonSubject","commonSource"].forEach(id=>$(id).value="");
+  $("commonDifficulty").value="";
+};
+
+$("validate4").onchange=render;
+
+$("clearBtn").onclick=()=>{
+  if(confirm("All imported questions clear karne hain?")){
+    data={A:[],B:[],C:[],D:[],E:[]};rawText="";render();setStatus("Cleared.");
+  }
+};
+
+$("jsonBtn").onclick=()=>download("question-bank.json",JSON.stringify(buildExport(),null,2),"application/json");
+$("jsBtn").onclick=()=>download("question-bank.js",buildJS(),"application/javascript");
+$("copyBtn").onclick=async()=>{
+  try{await navigator.clipboard.writeText(buildJS());setStatus("JS copied.");}
+  catch(e){setStatus("Clipboard blocked. Export JS use karo.")}
+};
+
+render();
+})();
+</script>
+</body>
+</html>
